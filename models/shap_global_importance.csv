@@ -1,0 +1,11 @@
+feature,mean_abs_shap
+type_PAYMENT,2.4168692
+type_CASH_IN,1.6810642
+type_CASH_OUT,1.1722013
+amount,1.154027
+type_TRANSFER,0.9584797
+hour,0.89978856
+step,0.6826457
+log_amount,0.45048687
+day,0.29867542
+type_DEBIT,0.016120674

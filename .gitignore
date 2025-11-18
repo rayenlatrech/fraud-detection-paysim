@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+.venv/
+
+# Data (DO NOT upload 6.3M rows)
+data/raw/*
+data/processed/*.parquet
+
+# Models (optional – keep shap csv, but avoid huge models)
+models/*.pkl
+models/*.json
+!models/shap_global_importance.csv
+
+# Streamlit caches
+.streamlit/
