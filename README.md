@@ -209,4 +209,4 @@ MIT License.
 ## 👤 Author
 **Rayen Latrech**  
 Data Science Student  
-GitHub: *add your GitHub link here*
+GitHub: https://github.com/rayenlatrech
