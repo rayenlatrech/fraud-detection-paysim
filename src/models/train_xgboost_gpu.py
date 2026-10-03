@@ -52,12 +52,8 @@ def train_xgboost_gpu(X_train, y_train):
     """
     Train XGBoost model.
 
-    NOTE: Current xgboost build doesn't support GPU (gpu_hist not valid),
-    so we fall back to 'hist' (fast CPU tree method).
-
-    If you later install GPU-enabled XGBoost, you can change:
-        tree_method='hist' -> 'gpu_hist'
-        predictor='auto'   -> 'gpu_predictor'
+    Uses the 'hist' tree method, which runs on CPU by default.
+    With a CUDA-enabled XGBoost build, pass device="cuda" to train on GPU.
     """
 
     print("\nTraining XGBoost model (CPU 'hist' tree method)...")
@@ -69,8 +65,7 @@ def train_xgboost_gpu(X_train, y_train):
     print(f"scale_pos_weight (neg/pos) = {scale_pos_weight:.2f}")
 
     model = XGBClassifier(
-        tree_method="hist",        # <-- CPU fast method (change to 'gpu_hist' if GPU build installed)
-        predictor="auto",          # <-- 'gpu_predictor' if GPU build
+        tree_method="hist",
         n_estimators=500,
         max_depth=8,
         learning_rate=0.05,

@@ -1,212 +1,127 @@
-# PaySim Fraud Detection (6.3M Transactions)
+# Fraud Detection on 6.3M Mobile-Money Transactions (PaySim)
 
-This project implements a full **fraud detection pipeline** on the **PaySim mobile money transactions dataset** (~6.3 million rows).  
-It covers data preprocessing, leakage removal, feature engineering, model training (Random Forest + XGBoost), model evaluation, SHAP explainability, and a full **Streamlit dashboard** with an interactive **what‑if fraud simulator**.
+An end-to-end fraud detection pipeline on the PaySim dataset: data cleaning,
+feature engineering, a time-based evaluation, Random Forest and XGBoost models for a
+heavily imbalanced target (about 0.13% fraud), SHAP explainability, and a Streamlit
+dashboard with a what-if simulator.
 
----
+## Results (XGBoost, last 7 days held out)
 
-## 📊 Dataset
-**PaySim1 dataset** (Kaggle): A synthetic mobile money transaction dataset containing:
-- 6.3M transactions
-- Transaction types: PAYMENT, CASH_IN, CASH_OUT, TRANSFER, DEBIT
-- Features: amount, origin/destination balances, time (step), fraud label (`isFraud`)
+| Metric | Value |
+|---|---|
+| ROC-AUC | 0.91 |
+| PR-AUC (average precision) | 0.33 |
 
-➡️ Download: *Kaggle link provided in the project documentation.*
+With roughly one fraud per 1,000 transactions, accuracy and even ROC-AUC look
+flattering, so **PR-AUC is the metric that matters here**. For reference, a random
+classifier's PR-AUC equals the fraud rate in the test window.
 
----
+These numbers are deliberately obtained **without** the account-balance columns (see
+below). With those columns, models on this dataset commonly reach near-perfect scores,
+which says more about the simulator than about fraud detection.
 
-## 🧹 1. Data Processing & Leakage Removal
+## Key design decisions
 
-### Steps:
-1. Loaded raw CSV (6.3M rows)
-2. Removed **balance difference leakage**:
-   - `oldbalanceOrg`, `newbalanceOrig`, `oldbalanceDest`, `newbalanceDest`  
-   These columns directly expose whether a transfer was fraudulent (data leakage).
-3. Converted:
-   - categorical → numeric (one-hot)
-   - created derived features:
-     - `hour`, `day`, `log_amount`
+**1. Removing the balance columns.**
+PaySim includes `oldbalanceOrg`, `newbalanceOrig`, `oldbalanceDest` and
+`newbalanceDest`. In this simulator, fraudulent transfers produce very distinctive
+balance patterns (for example, accounts emptied to exactly zero), and models trained on
+them reach near-perfect scores. That reflects how the data was generated rather than
+a signal a real bank could rely on, so I dropped them to make the task realistic and
+to see what the model can learn from the transaction itself.
 
-### Scripts:
-```
-python -m src.data.make_dataset
-python -m src.data.clean_dataset
-```
+**2. Time-based split instead of a random split.**
+The last 7 days (168 hourly steps) form the test set. A random split would let the
+model train on transactions from the same hours it is tested on, which overstates
+performance in deployment.
 
----
+**3. Handling a 1:1000 class imbalance.**
+Random Forest uses `class_weight="balanced"`; XGBoost uses
+`scale_pos_weight = negatives / positives ≈ 974`.
 
-## 🏗 2. Feature Engineering
-From cleaned data, created:
-- Time features: `hour`, `day`, `step`
-- Transaction type one-hot:
-  - `type_PAYMENT`
-  - `type_CASH_IN`
-  - `type_CASH_OUT`
-  - `type_TRANSFER`
-  - `type_DEBIT`
-- Scaled features:
-  - `log_amount`
+## Features
 
-### Script:
-```
-python -m src.features.build_features
-```
+| Feature | Description |
+|---|---|
+| `type_*` | One-hot transaction type (PAYMENT, CASH_IN, CASH_OUT, TRANSFER, DEBIT) |
+| `amount`, `log_amount` | Transaction amount, raw and log-scaled |
+| `hour` | Hour of day (`step % 24`) |
+| `day`, `step` | Day index and hourly step of the simulation |
 
----
+## Explainability (SHAP)
 
-## 🤖 3. Models (Random Forest & XGBoost)
+Global mean |SHAP| ranks the transaction type first: in PaySim, fraud only occurs
+in TRANSFER and CASH_OUT, so `type_PAYMENT` and `type_CASH_IN` are strong
+"not fraud" signals. Amount and hour of day follow. Full ranking:
+[`models/shap_global_importance.csv`](models/shap_global_importance.csv).
 
-### Random Forest
-- Baseline strong non-linear model
-- Handles imbalance using `class_weight='balanced'`
+Local SHAP explains individual predictions, showing which features pushed a given
+transaction toward or away from fraud.
 
-### XGBoost
-- Tuned for imbalance using:
-  ```
-  scale_pos_weight = #negatives / #positives ≈ 974
-  ```
-- Tree method: **hist** (fast, scalable)
-- Achieved:
-  - **ROC-AUC ≈ 0.91**
-  - **PR-AUC ≈ 0.33**
+## Dashboard
 
-### Train scripts:
-```
-python -m src.models.train_model           # Random Forest
-python -m src.models.train_xgboost_gpu    # XGBoost (CPU or GPU)
-```
-
----
-
-## 🧠 4. Explainability (SHAP)
-
-### Global SHAP:
-Shows which features matter most across all predictions.
-Top features found:
-- `type_PAYMENT` (strong non‑fraud signal)
-- `type_CASH_IN`
-- `type_CASH_OUT`
-- `type_TRANSFER`
-- `amount`, `log_amount`
-
-### Local SHAP:
-Per‑transaction explanations showing how each feature pushed the model toward:
-- fraud (positive SHAP)
-- or normal (negative SHAP)
-
-### Scripts:
-```
-python -m src.explain.shap_xgboost
-python -m src.explain.shap_single
-```
-
----
-
-## 📺 5. Streamlit Dashboard
-
-Run the full interactive dashboard:
-```
+```bash
 streamlit run app/streamlit/dashboard.py
 ```
 
-### Dashboard features:
-- **Global SHAP importance**
-- **Transaction Explorer**
-  - pick any real transaction from test set
-  - view model prediction
-  - view SHAP contributions
-- **What‑If Fraud Simulator**
-  Modify:
-  - transaction type  
-  - amount  
-  - hour  
-  - day  
-  Dashboard recomputes:
-  - prediction  
-  - fraud probability  
-  - SHAP explanation  
+- **Global importance**: SHAP ranking of all features.
+- **Transaction explorer**: pick a real test transaction and see its fraud probability and SHAP breakdown.
+- **What-if simulator**: change the type, amount, hour and day of a transaction and watch the prediction and explanation update.
 
----
+## Known limitations
 
-## 📁 Project Structure
+- `step` and `day` are used as features while the split is also based on time, so
+  every test transaction has a `step` and `day` value the model never saw in training.
+  Dropping them would make the evaluation cleaner.
+- PaySim is synthetic. Transaction volume and fraud are not distributed over time the
+  way they would be in real data, so the time features partly learn simulator artifacts.
+- No per-account history features (transaction velocity, typical amount per
+  sender), which is where most real-world fraud signal comes from.
+
+## Project structure
+
 ```
-fraud-detection-paysim/
-│
-├── data/
-│   ├── raw/
-│   ├── processed/
-│
 ├── src/
-│   ├── data/
-│   │   ├── make_dataset.py
-│   │   ├── clean_dataset.py
-│   ├── features/
-│   │   ├── build_features.py
-│   ├── models/
-│   │   ├── train_model.py
-│   │   ├── train_xgboost_gpu.py
-│   ├── explain/
-│       ├── shap_xgboost.py
-│       ├── shap_single.py
-│
-├── app/
-│   ├── streamlit/
-│       ├── dashboard.py
-│
-├── models/
-│   ├── xgboost_gpu_model.json
-│   ├── shap_global_importance.csv
-│
-└── README.md
+│   ├── config.py                 # paths
+│   ├── data/                     # load raw CSV, drop balance columns
+│   ├── eda/                      # exploratory analysis
+│   ├── features/                 # feature engineering
+│   ├── models/                   # Random Forest, XGBoost training
+│   └── explain/                  # global and local SHAP
+├── app/streamlit/dashboard.py    # interactive dashboard
+└── models/                       # trained models, SHAP importance
 ```
 
----
+## How to run
 
-## 🧪 Reproducing the Pipeline
+1. Download the PaySim dataset from Kaggle
+   ([`ealaxi/paysim1`](https://www.kaggle.com/datasets/ealaxi/paysim1)) and place the
+   CSV at `data/raw/PS_20174392719_1491204439457_log.csv`.
+2. Create an environment and install dependencies:
 
-### 1. Install environment
-```
-python -m venv .venv
-.\.venv\Scriptsctivate
-pip install -r requirements.txt
-```
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate        # Windows
+   # source .venv/bin/activate   # macOS / Linux
+   pip install -r requirements.txt
+   ```
 
-### 2. Run full pipeline
-```
-python -m src.data.make_dataset
-python -m src.data.clean_dataset
-python -m src.features.build_features
-python -m src.models.train_xgboost_gpu
-python -m src.explain.shap_xgboost
-```
+3. Run the pipeline from the project root:
 
-### 3. Launch dashboard
-```
-streamlit run app/streamlit/dashboard.py
-```
+   ```bash
+   python -m src.data.make_dataset        # raw CSV -> parquet
+   python -m src.data.clean_dataset       # drop balance columns
+   python -m src.features.build_features  # feature engineering
+   python -m src.models.train_model       # Random Forest baseline (optional)
+   python -m src.models.train_xgboost_gpu # XGBoost (runs on CPU by default)
+   python -m src.explain.shap_xgboost     # global SHAP importance
+   streamlit run app/streamlit/dashboard.py
+   ```
 
----
+## License
 
-## 📌 Skills Demonstrated
-- Fraud detection & imbalanced learning  
-- Data leakage detection  
-- Large-scale data handling (6.3M rows)  
-- Feature engineering  
-- Random Forest & XGBoost modeling  
-- ROC/PR analysis  
-- SHAP explainability  
-- Streamlit full interactive dashboard  
-- What-if model simulation  
-- Clean modular ML pipeline  
+MIT
 
----
+## Author
 
-## 📜 License
-MIT License.
-
----
-
-## 👤 Author
-**Rayen Latrech**  
-Data Science Student  
-GitHub: https://github.com/rayenlatrech
+Rayen Latrech · [GitHub](https://github.com/rayenlatrech)

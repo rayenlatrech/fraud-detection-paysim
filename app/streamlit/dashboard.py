@@ -11,7 +11,7 @@ import sys
 
 # ========= Make sure project root is on sys.path =========
 # This lets us do `from src.config import ...` when running via Streamlit.
-ROOT_DIR = Path(__file__).resolve().parents[2]  # D:\Projects\fraud-detection-paysim
+ROOT_DIR = Path(__file__).resolve().parents[2]  # project root
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
